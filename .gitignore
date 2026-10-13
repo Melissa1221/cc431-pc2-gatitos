@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+.DS_Store
+# Se generan con /prepare
+X.npy
+y.npy
+autores.npy
