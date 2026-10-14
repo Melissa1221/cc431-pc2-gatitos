@@ -26,6 +26,10 @@ python main.py
 
 Abrir <http://127.0.0.1:5001>, escribir tu nombre y dibujar lo que pida la app.
 
+**Desde una tablet o celular:** con la compu y la tablet en el mismo WiFi, corre
+`flask --app main run --host 0.0.0.0 --port 5001` y en la tablet abre `http://<IP de la compu>:5001`
+(en Mac la IP sale con `ipconfig getifaddr en0`). Si usas lápiz, la app ignora la palma apoyada.
+
 **Protocolo (lo seguimos todos):**
 
 1. La figura es siempre un **gatito**: cabeza, orejas, ojos, bigotes y lo que salga.
