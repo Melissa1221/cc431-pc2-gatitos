@@ -276,10 +276,28 @@ def stats():
     return jsonify(por_autor=tabla, total=total)
 
 
+def recortar(im, margen=0.1):
+    # Recorta el dibujo a su contorno y lo centra en un cuadrado, para que la red
+    # compare formas y no el tamano o la posicion del gatito en el lienzo
+    filas = np.where(im.max(axis=1) > 0)[0]
+    cols = np.where(im.max(axis=0) > 0)[0]
+    if len(filas) == 0:
+        return im
+    im = im[filas[0]:filas[-1] + 1, cols[0]:cols[-1] + 1]
+    lado = int(max(im.shape) * (1 + 2 * margen))
+    cuadro = np.zeros((lado, lado), dtype=im.dtype)
+    y = (lado - im.shape[0]) // 2
+    x = (lado - im.shape[1]) // 2
+    cuadro[y:y + im.shape[0], x:x + im.shape[1]] = im
+    return cuadro
+
+
 @app.route('/prepare', methods=['GET'])
 def prepare_dataset():
-    # ?size=64 por defecto; el lienzo mide 280x280 y se reduce para entrenar
+    # ?size=64 por defecto; el lienzo mide 280x280 y se reduce para entrenar.
+    # ?recorte=0 deja el lienzo completo, con el tamano y la posicion originales
     size = int(request.args.get('size', 64))
+    recorte = request.args.get('recorte', '1') != '0'
     images = []
     labels = []
     autores = []
@@ -290,6 +308,8 @@ def prepare_dataset():
       images_read = io.concatenate_images(io.imread_collection(filelist))
       # El canal alfa vale 255 donde hay trazo y 0 en el fondo transparente
       images_read = images_read[:, :, :, 3]
+      if recorte:
+        images_read = [recortar(im) for im in images_read]
       images_read = np.array([resize(im, (size, size), anti_aliasing=True, preserve_range=True)
                               for im in images_read]).astype(np.uint8)
       images.append(images_read)
@@ -301,7 +321,7 @@ def prepare_dataset():
     np.save('X.npy', images)
     np.save('y.npy', labels)
     np.save('autores.npy', autores)
-    return "OK! {} imagenes de {}x{}".format(images.shape[0], size, size)
+    return "OK! {} imagenes de {}x{} ({})".format(images.shape[0], size, size, "recortadas" if recorte else "lienzo completo")
 
 @app.route('/X.npy', methods=['GET'])
 def download_X():
