@@ -11,7 +11,7 @@ Es un problema de clasificación con dos clases: `abiertos` y `cerrados`.
 ## Integrantes
 
 - Melissa Iman Noriega
-- Ivette Mera
+- Ivett Mera Amado
 - Benjamin Seminario
 - Martin Centeno
 
