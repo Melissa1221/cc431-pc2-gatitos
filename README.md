@@ -52,7 +52,7 @@ commit y push). Los nombres llevan el autor y la hora, así que no chocan.
 |---|---|
 | `/` | Lienzo para dibujar |
 | `/stats` | Cuántos dibujos hay por autor y por clase |
-| `/prepare?size=64` | Genera `X.npy` (imágenes size×size, canal alfa), `y.npy` (clase) y `autores.npy` |
+| `/prepare?size=64` | Genera `X.npy` (imágenes size×size, canal alfa), `y.npy` (clase) y `autores.npy`. Cada dibujo se recorta a su contorno y se centra; con `&recorte=0` se deja el lienzo completo |
 | `/X.npy`, `/y.npy`, `/autores.npy` | Descarga los arreglos |
 
 `autores.npy` sirve para probar la red con una persona que no vio al entrenar: si todos los
