@@ -73,24 +73,36 @@ main_html = """
           mousePressed = false;
       });
 
-      // Soporte tactil, para dibujar desde el celular o una tablet
+      // Soporte tactil, para dibujar desde el celular o una tablet.
+      // Si se usa un lapiz, se ignoran los toques del dedo o la palma apoyada
       var canvas = document.getElementById('myCanvas');
+      var usaLapiz = false;
+      function elegirToque(lista) {
+          for (var i = 0; i < lista.length; i++) {
+              if (lista[i].touchType === 'stylus') { usaLapiz = true; return lista[i]; }
+          }
+          return usaLapiz ? null : lista[0];
+      }
       canvas.addEventListener('touchstart', function (e) {
           e.preventDefault();
-          var t = e.touches[0];
+          var t = elegirToque(e.touches);
+          if (!t) { return; }
           mousePressed = true;
           empezarTrazo();
           Draw(t.pageX - $(canvas).offset().left, t.pageY - $(canvas).offset().top, false);
       });
       canvas.addEventListener('touchmove', function (e) {
           e.preventDefault();
-          var t = e.touches[0];
-          if (mousePressed) {
+          var t = elegirToque(e.touches);
+          if (t && mousePressed) {
               Draw(t.pageX - $(canvas).offset().left, t.pageY - $(canvas).offset().top, true);
           }
       });
       canvas.addEventListener('touchend', function (e) {
-          mousePressed = false;
+          // Con lapiz, el trazo termina cuando se levanta el lapiz, no la palma
+          if (!usaLapiz || elegirToque(e.changedTouches)) {
+              mousePressed = false;
+          }
       });
   }
 
