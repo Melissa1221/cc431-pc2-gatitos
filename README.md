@@ -59,6 +59,17 @@ commit y push). Los nombres llevan el autor y la hora, así que no chocan.
 dibujos de una persona están en el test, la red no puede acertar reconociendo el estilo de
 quien dibujó.
 
+## Evaluación con una persona no vista
+
+Todos los dibujos del autor `martin` se reservarán para la prueba final. No se usarán para
+entrenar la red ni para elegir sus parámetros; el entrenamiento y los ajustes se harán con
+dibujos de los demás autores. Las próximas rondas de `martin` también pertenecen a esta prueba.
+
+**Justificación:** queremos comprobar si la red distingue entre dibujar mirando y dibujar a
+ciegas en una persona cuyo estilo no conoció. Si se mezclan dibujos de la misma persona entre
+entrenamiento y prueba, la red podría reconocer su estilo en lugar de aprender la diferencia
+entre las dos condiciones. Por eso la separación se hace por autor, no repartiendo imágenes al azar.
+
 ## Entrenamiento y métricas
 
 Ver el notebook en `notebooks/` (pendiente).
