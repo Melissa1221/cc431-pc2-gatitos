@@ -5,3 +5,4 @@ __pycache__/
 X.npy
 y.npy
 autores.npy
+/model_results/

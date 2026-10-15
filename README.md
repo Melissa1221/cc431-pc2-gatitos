@@ -72,4 +72,24 @@ entre las dos condiciones. Por eso la separación se hace por autor, no repartie
 
 ## Entrenamiento y métricas
 
-Ver el notebook en `notebooks/` (pendiente).
+La CNN mínima usa *Global Average Pooling* antes de la salida. Todos los dibujos del autor
+`martin` quedan reservados para la prueba final; no se usan para entrenar ni ajustar el modelo.
+El script repite el entrenamiento con cinco semillas y guarda predicciones, métricas y CAM.
+
+1. Con las dependencias de la app instaladas, inicia `python main.py`.
+2. Abre <http://127.0.0.1:5001/prepare?size=64> para generar `X.npy`, `y.npy` y `autores.npy`.
+   Vuelve a generar estos archivos después de agregar dibujos nuevos.
+3. En otra terminal, instala PyTorch y entrena:
+
+   ```bash
+   python -m pip install -r requirements-ml.txt
+   python train_minimal_cnn.py --test-author martin
+   ```
+
+El entrenamiento usa a todos los demás autores y reserva a `martin` como test; la validación
+se separa solo de los autores de entrenamiento. Los resultados quedan en `model_results/`:
+`evaluation.json` contiene matriz de confusión, métricas por clase y media, desviación estándar
+e intervalo de confianza del 95% entre semillas; cada subcarpeta de semilla contiene el modelo,
+las predicciones, el historial de entrenamiento y CAM de ejemplos de prueba.
+
+Este es un baseline para desbloquear la evaluación; no incluye todavía la comparación con el MLP.
