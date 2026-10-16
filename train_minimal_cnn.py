@@ -1,9 +1,9 @@
-"""Entrena una CNN mínima y reserva un autor completo para la prueba final.
+"""Entrena una CNN mínima y evalúa generalización dejando autores completos fuera.
 
 Preparación:
 1. Ejecutar la aplicación y abrir http://127.0.0.1:5001/prepare?size=64.
 2. Instalar las dependencias de ML con `python -m pip install -r requirements-ml.txt`.
-3. Ejecutar `python train_minimal_cnn.py --test-author martin`.
+3. Ejecutar `python train_minimal_cnn.py --leave-one-author-out`.
 
 La clase describe si quien dibujó estaba mirando (`abiertos`) o a ciegas
 (`cerrados`); no describe los ojos representados en el dibujo.
@@ -89,6 +89,26 @@ def load_prepared_arrays(data_dir: Path) -> tuple[np.ndarray, np.ndarray, np.nda
         raise ValueError("X.npy contiene valores no finitos.")
 
     return images, labels, authors
+
+
+def resolve_test_authors(
+    authors: np.ndarray,
+    test_author: str | None,
+    leave_one_author_out: bool,
+) -> list[str]:
+    """Elige los autores de test sin seleccionarlos según el rendimiento."""
+    available_authors = sorted({str(author) for author in authors})
+    if leave_one_author_out:
+        if test_author is not None:
+            raise ValueError("--test-author y leave-one-author-out no se pueden combinar.")
+        if len(available_authors) < 2:
+            raise ValueError("Se necesitan al menos dos autores para leave-one-author-out.")
+        return available_authors
+
+    selected_author = test_author or "martin"
+    if selected_author not in available_authors:
+        raise ValueError(f"El autor de prueba '{selected_author}' no existe en los datos.")
+    return [selected_author]
 
 
 def split_by_author(
@@ -408,106 +428,191 @@ def run(args: argparse.Namespace) -> None:
     if args.cam_per_class < 0:
         raise ValueError("--cam-per-class no puede ser negativo.")
 
-    output_dir = args.output_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
-    runs: list[dict[str, object]] = []
-    train_authors = sorted(set(authors) - {args.test_author})
-    if not train_authors:
-        raise ValueError("No hay autores disponibles para entrenamiento.")
+    test_authors = resolve_test_authors(
+        authors,
+        test_author=args.test_author,
+        leave_one_author_out=args.leave_one_author_out,
+    )
+    protocol_dir = args.output_dir / (
+        "leave_one_author_out"
+        if args.leave_one_author_out
+        else f"single_author_{test_authors[0]}"
+    )
+    protocol_dir.mkdir(parents=True, exist_ok=True)
+    fold_results: list[dict[str, object]] = []
+    out_of_fold: dict[int, dict[str, list[np.ndarray]]] = {
+        seed: {"true": [], "predicted": []} for seed in args.seeds
+    }
 
-    for seed in args.seeds:
+    for test_author in test_authors:
+        train_authors = sorted({str(author) for author in authors} - {test_author})
+        if not train_authors:
+            raise ValueError("No hay autores disponibles para entrenamiento.")
+
         train_indices, validation_indices, test_indices = split_by_author(
             labels,
             authors,
-            args.test_author,
+            test_author,
             args.validation_fraction,
             args.split_seed,
-        )
-        model, history, best_epoch = train_one_seed(
-            images,
-            labels,
-            train_indices,
-            validation_indices,
-            seed,
-            args.epochs,
-            args.batch_size,
-            args.patience,
         )
         test_labels = np.asarray(
             [CLASS_NAMES.index(str(label)) for label in labels[test_indices]],
             dtype=np.int64,
         )
-        test_loader = make_loader(
-            images, labels, test_indices, args.batch_size, False, seed
-        )
-        predictions, probabilities = predict(model, test_loader)
-        metrics = calculate_metrics(test_labels, predictions)
-        run_dir = output_dir / f"seed_{seed}"
-        run_dir.mkdir(parents=True, exist_ok=True)
+        fold_dir = protocol_dir / f"test_{test_author}"
+        fold_runs: list[dict[str, object]] = []
 
-        checkpoint = {
-            "model_state_dict": model.state_dict(),
-            "class_names": CLASS_NAMES,
-            "test_author": args.test_author,
-            "train_authors": train_authors,
-            "seed": seed,
-            "input_shape": list(images.shape[1:]),
-            "architecture": "3 conv blocks -> GlobalAveragePooling -> 2-class linear head",
-            "best_epoch": best_epoch,
-        }
-        torch.save(checkpoint, run_dir / "model.pt")
-        with (run_dir / "history.json").open("w", encoding="utf-8") as file:
-            json.dump(history, file, ensure_ascii=False, indent=2)
-        write_predictions(
-            run_dir / "predictions.csv",
-            test_indices,
-            authors,
-            test_labels,
-            predictions,
-            probabilities,
-        )
-        if args.cam_per_class:
-            cam_dir = run_dir / "cam"
-            cam_dir.mkdir(parents=True, exist_ok=True)
-            save_cam_examples(
-                model,
+        for seed in args.seeds:
+            model, history, best_epoch = train_one_seed(
                 images,
+                labels,
+                train_indices,
+                validation_indices,
+                seed,
+                args.epochs,
+                args.batch_size,
+                args.patience,
+            )
+            test_loader = make_loader(
+                images, labels, test_indices, args.batch_size, False, seed
+            )
+            predictions, probabilities = predict(model, test_loader)
+            metrics = calculate_metrics(test_labels, predictions)
+            run_dir = fold_dir / f"seed_{seed}"
+            run_dir.mkdir(parents=True, exist_ok=True)
+
+            checkpoint = {
+                "model_state_dict": model.state_dict(),
+                "class_names": CLASS_NAMES,
+                "test_author": test_author,
+                "train_authors": train_authors,
+                "seed": seed,
+                "split_seed": args.split_seed,
+                "input_shape": list(images.shape[1:]),
+                "architecture": "3 conv blocks -> GlobalAveragePooling -> 2-class linear head",
+                "best_epoch": best_epoch,
+            }
+            torch.save(checkpoint, run_dir / "model.pt")
+            with (run_dir / "history.json").open("w", encoding="utf-8") as file:
+                json.dump(history, file, ensure_ascii=False, indent=2)
+            write_predictions(
+                run_dir / "predictions.csv",
                 test_indices,
+                authors,
                 test_labels,
                 predictions,
-                cam_dir,
-                seed,
-                args.cam_per_class,
+                probabilities,
+            )
+            if args.cam_per_class:
+                cam_dir = run_dir / "cam"
+                cam_dir.mkdir(parents=True, exist_ok=True)
+                save_cam_examples(
+                    model,
+                    images,
+                    test_indices,
+                    test_labels,
+                    predictions,
+                    cam_dir,
+                    seed,
+                    args.cam_per_class,
+                )
+
+            fold_runs.append({"seed": seed, **metrics, "best_epoch": best_epoch})
+            out_of_fold[seed]["true"].append(test_labels)
+            out_of_fold[seed]["predicted"].append(predictions)
+            print(
+                f"test_author={test_author} seed={seed} "
+                f"test_accuracy={float(metrics['accuracy']):.3f}"
             )
 
-        run_result = {"seed": seed, **metrics, "best_epoch": best_epoch}
-        runs.append(run_result)
-        print(f"seed={seed} test_accuracy={float(metrics['accuracy']):.3f}")
+        train_class_counts = {
+            class_name: int(np.sum(labels[train_indices] == class_name))
+            for class_name in CLASS_NAMES
+        }
+        test_class_counts = {
+            class_name: int(np.sum(labels[test_indices] == class_name))
+            for class_name in CLASS_NAMES
+        }
+        fold_results.append(
+            {
+                "test_author": test_author,
+                "train_authors": train_authors,
+                "train_examples": int(len(train_indices)),
+                "validation_examples": int(len(validation_indices)),
+                "test_examples": int(len(test_indices)),
+                "train_class_counts": train_class_counts,
+                "test_class_counts": test_class_counts,
+                "split_seed": args.split_seed,
+                "runs": fold_runs,
+                "summary_across_seeds": summarize_runs(fold_runs),
+            }
+        )
+
+    out_of_fold_runs: list[dict[str, object]] = []
+    for seed in args.seeds:
+        y_true = np.concatenate(out_of_fold[seed]["true"])
+        y_pred = np.concatenate(out_of_fold[seed]["predicted"])
+        out_of_fold_runs.append(
+            {"seed": seed, **calculate_metrics(y_true, y_pred)}
+        )
+
+    fold_mean_runs: list[dict[str, object]] = []
+    for fold in fold_results:
+        fold_summary = fold["summary_across_seeds"]
+        fold_mean_runs.append(
+            {
+                "accuracy": fold_summary["accuracy"]["mean"],  # type: ignore[index]
+                "per_class": {
+                    class_name: {
+                        metric: fold_summary["per_class"][class_name][metric]["mean"]  # type: ignore[index]
+                        for metric in ("precision", "recall", "f1")
+                    }
+                    for class_name in CLASS_NAMES
+                },
+            }
+        )
 
     report = {
-        "test_author": args.test_author,
-        "train_authors": train_authors,
+        "protocol": (
+            "leave-one-author-out"
+            if args.leave_one_author_out
+            else "single-author-holdout"
+        ),
+        "authors": sorted({str(author) for author in authors}),
+        "test_authors": test_authors,
         "classes": list(CLASS_NAMES),
-        "test_examples": int(np.sum(authors == args.test_author)),
         "split_seed": args.split_seed,
         "seeds": list(args.seeds),
-        "runs": runs,
-        "summary_across_seeds": summarize_runs(runs),
+        "folds": fold_results,
+        "out_of_fold_runs": out_of_fold_runs,
+        "out_of_fold_summary_across_seeds": summarize_runs(out_of_fold_runs),
+        "summary_across_authors": (
+            summarize_runs(fold_mean_runs) if len(fold_mean_runs) > 1 else None
+        ),
         "confidence_interval_note": (
-            "IC 95% t de Student entre semillas; describe variación entre entrenamientos, "
-            "no incertidumbre poblacional por sí sola; sus límites se restringen a [0, 1]."
+            "Los IC95% entre semillas resumen variación de entrenamiento. "
+            "El resumen entre autores es exploratorio y usa solo los autores presentes; "
+            "ninguno de estos intervalos sustituye una prueba externa con una quinta persona. "
+            "Los límites se restringen al rango válido [0, 1]."
         ),
     }
-    with (output_dir / "evaluation.json").open("w", encoding="utf-8") as file:
+    with (protocol_dir / "evaluation.json").open("w", encoding="utf-8") as file:
         json.dump(report, file, ensure_ascii=False, indent=2)
-    print(f"Resultados guardados en: {output_dir.resolve()}")
+    print(f"Resultados guardados en: {protocol_dir.resolve()}")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, default=Path("."))
     parser.add_argument("--output-dir", type=Path, default=Path("model_results"))
-    parser.add_argument("--test-author", default="martin")
+    test_mode = parser.add_mutually_exclusive_group()
+    test_mode.add_argument("--test-author")
+    test_mode.add_argument(
+        "--leave-one-author-out",
+        action="store_true",
+        help="Ejecuta un fold por cada autor presente en autores.npy.",
+    )
     parser.add_argument("--seeds", nargs="+", type=int, default=list(DEFAULT_SEEDS))
     parser.add_argument("--split-seed", type=int, default=42)
     parser.add_argument("--epochs", type=int, default=30)

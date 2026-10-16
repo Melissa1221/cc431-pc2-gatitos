@@ -59,22 +59,33 @@ commit y push). Los nombres llevan el autor y la hora, así que no chocan.
 dibujos de una persona están en el test, la red no puede acertar reconociendo el estilo de
 quien dibujó.
 
-## Evaluación con una persona no vista
+## Evaluación por persona no vista
 
-Todos los dibujos del autor `martin` se reservarán para la prueba final. No se usarán para
-entrenar la red ni para elegir sus parámetros; el entrenamiento y los ajustes se harán con
-dibujos de los demás autores. Las próximas rondas de `martin` también pertenecen a esta prueba.
+Usamos **leave-one-author-out**: hacemos un fold por cada autor. En cada fold, todos los dibujos
+de una persona se reservan para test y nunca entran en train ni en validation; el modelo se
+entrena con los otros autores. En el dataset actual los IDs son `melissa`, `ivett`, `benja` y
+`martin`, así que son cuatro folds.
 
-**Justificación:** queremos comprobar si la red distingue entre dibujar mirando y dibujar a
-ciegas en una persona cuyo estilo no conoció. Si se mezclan dibujos de la misma persona entre
-entrenamiento y prueba, la red podría reconocer su estilo en lugar de aprender la diferencia
-entre las dos condiciones. Por eso la separación se hace por autor, no repartiendo imágenes al azar.
+| Fold | Test | Train y validation |
+|---|---|---|
+| 1 | `melissa` | `ivett`, `benja`, `martin` |
+| 2 | `ivett` | `melissa`, `benja`, `martin` |
+| 3 | `benja` | `melissa`, `ivett`, `martin` |
+| 4 | `martin` | `melissa`, `ivett`, `benja` |
+
+**Justificación:** no elegimos a la persona que dibuja mejor o peor, porque eso podría sesgar la
+evaluación. Probamos con cada persona una vez para ver si el resultado depende de quién quedó
+fuera. La separación se hace por autor, no repartiendo PNGs al azar: de otro modo la red podría
+reconocer el estilo de alguien que ya vio durante el entrenamiento.
+
+La validación también usa solo los autores de train de ese fold. Los resultados de los cuatro
+folds son una evaluación cruzada de estas personas; no equivalen a un test externo con una quinta
+persona que la red nunca haya visto en ninguna etapa.
 
 ## Entrenamiento y métricas
 
-La CNN mínima usa *Global Average Pooling* antes de la salida. Todos los dibujos del autor
-`martin` quedan reservados para la prueba final; no se usan para entrenar ni ajustar el modelo.
-El script repite el entrenamiento con cinco semillas y guarda predicciones, métricas y CAM.
+La CNN mínima usa *Global Average Pooling* antes de la salida. El script repite cada fold con cinco
+semillas y guarda predicciones, métricas y CAM por persona.
 
 1. Con las dependencias de la app instaladas, inicia `python main.py`.
 2. Abre <http://127.0.0.1:5001/prepare?size=64> para generar `X.npy`, `y.npy` y `autores.npy`.
@@ -83,13 +94,16 @@ El script repite el entrenamiento con cinco semillas y guarda predicciones, mét
 
    ```bash
    python -m pip install -r requirements-ml.txt
-   python train_minimal_cnn.py --test-author martin
+   python train_minimal_cnn.py --leave-one-author-out
    ```
 
-El entrenamiento usa a todos los demás autores y reserva a `martin` como test; la validación
-se separa solo de los autores de entrenamiento. Los resultados quedan en `model_results/`:
-`evaluation.json` contiene matriz de confusión, métricas por clase y media, desviación estándar
-e intervalo de confianza del 95% entre semillas; cada subcarpeta de semilla contiene el modelo,
-las predicciones, el historial de entrenamiento y CAM de ejemplos de prueba.
+Los resultados quedan en `model_results/leave_one_author_out/`. `evaluation.json` incluye los
+resultados de cada autor como test, las predicciones out-of-fold y el resumen entre folds y
+semillas. Cada fold contiene checkpoints, predicciones, historial de entrenamiento y CAM.
+
+Después de agregar o limpiar PNGs, vuelve a abrir `/prepare?size=64` para regenerar `X.npy`,
+`y.npy` y `autores.npy`. El entrenamiento usa los PNGs presentes en las carpetas de clase; los
+CSV de metadata no sustituyen esa revisión y pueden conservar filas de archivos borrados durante
+la limpieza.
 
 Este es un baseline para desbloquear la evaluación; no incluye todavía la comparación con el MLP.
